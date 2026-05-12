@@ -8,28 +8,28 @@ from modules.base import BaseModule
 
 
 MODULE_MAP = {
-    "recon":      "modules.recon",
-    "sqli":       "modules.sqli",
-    "xss":        "modules.xss",
-    "auth":       "modules.auth",
-    "idor":       "modules.idor",
-    "upload":     "modules.upload",
-    "lfi":        "modules.lfi",
-    "ssrf":       "modules.ssrf",
-    "xxe":        "modules.xxe",
-    "ssti":       "modules.ssti",
-    "nosql":      "modules.nosql",
-    "cors":       "modules.cors",
-    "jwt":        "modules.jwt",
-    "waf":        "modules.waf",
-    "csrf":       "modules.csrf",
-    "desync":     "modules.desync",
-    "race":       "modules.race",
-    "ratelimit":  "modules.ratelimit",
-    "websocket":  "modules.websocket",
-    "graphql":    "modules.graphql",
-    "2fa":        "modules.twofa",
-    "captcha":    "modules.captcha",
+    "recon":      ("modules.recon", "ReconModule"),
+    "sqli":       ("modules.sqli", "SqliModule"),
+    "xss":        ("modules.xss", "XssModule"),
+    "auth":       ("modules.auth", "AuthModule"),
+    "idor":       ("modules.idor", "IdorModule"),
+    "upload":     ("modules.upload", "UploadModule"),
+    "lfi":        ("modules.lfi", "LfiModule"),
+    "ssrf":       ("modules.ssrf", "SsrfModule"),
+    "xxe":        ("modules.xxe", "XxeModule"),
+    "ssti":       ("modules.ssti", "SstiModule"),
+    "nosql":      ("modules.nosql", "NosqlModule"),
+    "cors":       ("modules.cors", "CorsModule"),
+    "jwt":        ("modules.jwt", "JwtModule"),
+    "waf":        ("modules.waf", "WafModule"),
+    "csrf":       ("modules.csrf", "CsrfModule"),
+    "desync":     ("modules.desync", "DesyncModule"),
+    "race":       ("modules.race", "RaceModule"),
+    "ratelimit":  ("modules.ratelimit", "RatelimitModule"),
+    "websocket":  ("modules.websocket", "WebsocketModule"),
+    "graphql":    ("modules.graphql", "GraphqlModule"),
+    "2fa":        ("modules.twofa", "TwofaModule"),
+    "captcha":    ("modules.captcha", "CaptchaModule"),
 }
 
 
@@ -45,10 +45,8 @@ class Engine:
         return self.settings.modules
 
     def _load_module(self, name: str) -> BaseModule:
-        mod_path = MODULE_MAP[name]
+        mod_path, cls_name = MODULE_MAP[name]
         mod = importlib.import_module(mod_path)
-        cls_name = "".join(part.capitalize() for part in name.split("_")) + "Module"
-        cls_name = cls_name.replace("2fa", "Twofa").replace("Twofa", "TwofaModule")
         cls = getattr(mod, cls_name)
         return cls(self.settings, self.log, self.results)
 
