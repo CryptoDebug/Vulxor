@@ -125,10 +125,17 @@ Generate only one report format:
 python main.py https://target.example.com --report-format html
 ```
 
+Display the built-in help:
+
+```bash
+python main.py --help
+```
+
 ## CLI Options
 
 | Option | Description |
 | --- | --- |
+| `-h`, `--help` | Show the built-in CLI help and exit |
 | `target` | Target URL, including `http://` or `https://` |
 | `--modules` | Modules to run, or `all` for every module |
 | `--output` | Output directory for generated reports |
