@@ -110,6 +110,12 @@ Run selected modules:
 python main.py https://target.example.com --modules recon sqli xss jwt
 ```
 
+Use the aggressive profile for deeper, slower non-destructive checks:
+
+```bash
+python main.py https://target.example.com --profile aggressive
+```
+
 Send traffic through a proxy:
 
 ```bash
@@ -154,6 +160,7 @@ python main.py --help
 | --- | --- |
 | `-h`, `--help` | Show the built-in CLI help and exit |
 | `target` | Target URL, including `http://` or `https://` |
+| `--profile` | Scan intensity: `safe` by default, or `aggressive` for deeper checks |
 | `--modules` | Modules to run, or `all` for every module |
 | `--output` | Output directory for generated reports |
 | `--threads` | Number of worker threads exposed in settings |

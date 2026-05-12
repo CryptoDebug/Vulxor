@@ -76,8 +76,9 @@ class SqliModule(BaseModule):
             for param in params:
                 self._run_error_tests(base_url, param)
                 self._run_boolean_tests(base_url, param)
-                self._run_time_tests(base_url, param)
-                self._run_union_tests(base_url, param)
+                if self.settings.is_aggressive():
+                    self._run_time_tests(base_url, param)
+                    self._run_union_tests(base_url, param)
 
     def _test_form_params(self):
         for form in self._crawl_forms():
@@ -99,7 +100,7 @@ class SqliModule(BaseModule):
                 self._run_error_tests(self.url(action), name, method="POST")
 
     def _run_error_tests(self, url: str, param: str, method: str = "GET"):
-        for payload in self.ERROR_PAYLOADS:
+        for payload in self._payloads(self.ERROR_PAYLOADS):
             resp = self._inject(url, param, payload, method)
             if resp and self._is_error(resp.text):
                 self.add_finding(
@@ -114,7 +115,7 @@ class SqliModule(BaseModule):
                 return
 
     def _run_time_tests(self, url: str, param: str, method: str = "GET"):
-        for payload in self.TIME_PAYLOADS:
+        for payload in self._payloads(self.TIME_PAYLOADS):
             start = time.time()
             resp = self._inject(url, param, payload, method)
             elapsed = time.time() - start
@@ -134,7 +135,7 @@ class SqliModule(BaseModule):
         if not baseline:
             return
 
-        for true_payload, false_payload in self.BOOLEAN_PAYLOADS:
+        for true_payload, false_payload in self._payloads(self.BOOLEAN_PAYLOADS):
             true_resp = self._inject(url, param, true_payload, method)
             false_resp = self._inject(url, param, false_payload, method)
             if not true_resp or not false_resp:
@@ -157,7 +158,7 @@ class SqliModule(BaseModule):
                 return
 
     def _run_union_tests(self, url: str, param: str, method: str = "GET"):
-        for payload in self.UNION_PAYLOADS:
+        for payload in self._payloads(self.UNION_PAYLOADS):
             resp = self._inject(url, param, payload, method)
             if resp and ("@@version" in resp.text or re.search(r"\d+\.\d+\.\d+", resp.text)):
                 self.add_finding(
@@ -212,7 +213,7 @@ class SqliModule(BaseModule):
                 "method": method,
                 "inputs": form.get("inputs", []),
             })
-        return forms[:10]
+        return forms[:20 if self.settings.is_aggressive() else 8]
 
     def _page_params(self, url):
         crawl = self.results.meta.get("crawl", {})
@@ -233,6 +234,11 @@ class SqliModule(BaseModule):
 
     def _signature(self, resp):
         return f"{resp.status_code}/{len(resp.text)}"
+
+    def _payloads(self, payloads):
+        if self.settings.is_aggressive():
+            return payloads
+        return payloads[:4]
 
     def _is_error(self, body: str) -> bool:
         return any(re.search(p, body, re.I) for p in self.DB_ERROR_PATTERNS)

@@ -6,6 +6,7 @@ from typing import List, Optional, Dict
 class Settings:
     target: str
     modules: List[str] = field(default_factory=lambda: ["all"])
+    profile: str = "safe"
     threads: int = 10
     timeout: int = 10
     proxy: Optional[str] = None
@@ -56,3 +57,6 @@ class Settings:
             for item in self.tools.split(",")
             if item.strip()
         ]
+
+    def is_aggressive(self) -> bool:
+        return self.profile == "aggressive"

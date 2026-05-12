@@ -113,6 +113,8 @@ class CrawlModule(BaseModule):
         words = self._load_wordlist()
         if not words:
             return []
+        limit = 2000 if self.settings.is_aggressive() else 300
+        words = words[:limit]
 
         max_workers = max(1, self.settings.threads)
         found = []

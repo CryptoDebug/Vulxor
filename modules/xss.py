@@ -38,7 +38,7 @@ class XssModule(BaseModule):
     def _test_reflected(self):
         for url in self._candidate_pages():
             for param in self._param_candidates(url):
-                for payload in self.PAYLOADS[:6]:  # Top payloads just for speed
+                for payload in self._payloads():
                     resp = self.get(url, params={param: payload})
                     if not resp:
                         continue
@@ -68,7 +68,7 @@ class XssModule(BaseModule):
 
     def _test_forms(self):
         for form in self._crawl_forms():
-            for payload in self.PAYLOADS[:4]:
+            for payload in self._payloads(forms=True):
                 data = {field: payload for field in form["inputs"]}
                 target_url = form["action"]
                 r = self.post(target_url, data=data) if form["method"] == "post" \
@@ -90,7 +90,7 @@ class XssModule(BaseModule):
             return
         forms = self._parse_forms(resp.text)
         for form in forms[:5]:
-            for payload in self.PAYLOADS[:4]:
+            for payload in self._payloads(forms=True):
                 data = {field: payload for field in form["inputs"]}
                 target_url = self.url(form["action"])
                 r = self.post(target_url, data=data) if form["method"] == "post" \
@@ -161,7 +161,7 @@ class XssModule(BaseModule):
             if url not in seen:
                 seen.add(url)
                 out.append(url)
-        return out[:20]
+        return out[:30 if self.settings.is_aggressive() else 12]
 
     def _param_candidates(self, url):
         parsed = urlparse(url)
@@ -177,7 +177,7 @@ class XssModule(BaseModule):
             if param and param not in seen:
                 seen.add(param)
                 out.append(param)
-        return out[:20]
+        return out[:24 if self.settings.is_aggressive() else 12]
 
     def _crawl_forms(self):
         crawl = self.results.meta.get("crawl", {})
@@ -191,7 +191,7 @@ class XssModule(BaseModule):
                 "method": method,
                 "inputs": form.get("inputs", []),
             })
-        return forms[:10]
+        return forms[:20 if self.settings.is_aggressive() else 8]
 
     def _reflection_state(self, body, payload):
         if payload in body:
@@ -200,3 +200,8 @@ class XssModule(BaseModule):
         if escaped in body or html.escape(payload, quote=True) in body:
             return "escaped"
         return ""
+
+    def _payloads(self, forms=False):
+        if self.settings.is_aggressive():
+            return self.PAYLOADS if not forms else self.PAYLOADS[:10]
+        return self.PAYLOADS[:4 if forms else 5]

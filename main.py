@@ -30,6 +30,12 @@ def parse_args():
     )
     parser.add_argument("target", help="Target URL (e.g. https://example.com)")
     parser.add_argument(
+        "--profile",
+        choices=["safe", "aggressive"],
+        default="safe",
+        help="Scan intensity profile (default: safe)",
+    )
+    parser.add_argument(
         "--modules",
         nargs="+",
         choices=[
@@ -70,8 +76,19 @@ def parse_args():
     return parser.parse_args()
 
 
+def apply_profile_defaults(args):
+    if args.profile != "aggressive":
+        return
+    args.threads = max(args.threads, 20)
+    args.timeout = max(args.timeout, 15)
+    args.crawl_depth = max(args.crawl_depth, 3)
+    args.max_pages = max(args.max_pages, 150)
+    args.tool_timeout = max(args.tool_timeout, 240)
+
+
 def main():
     args = parse_args()
+    apply_profile_defaults(args)
 
     if not args.no_banner:
         print_banner()
@@ -83,6 +100,7 @@ def main():
     settings = Settings(
         target=args.target,
         modules=args.modules,
+        profile=args.profile,
         threads=args.threads,
         timeout=args.timeout,
         proxy=args.proxy,
@@ -104,6 +122,7 @@ def main():
     log = Logger(verbose=args.verbose)
     log.info(f"Target   : {args.target}")
     log.info(f"Modules  : {', '.join(args.modules)}")
+    log.info(f"Profile  : {args.profile}")
     log.info(f"Threads  : {args.threads}")
     log.info(f"Started  : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     log.separator()

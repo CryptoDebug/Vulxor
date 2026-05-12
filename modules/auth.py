@@ -66,7 +66,8 @@ class AuthModule(BaseModule):
         if not resp0:
             return
         token = self._extract_csrf(resp0.text)
-        for user, pwd in self.DEFAULT_CREDS:
+        creds = self.DEFAULT_CREDS if self.settings.is_aggressive() else self.DEFAULT_CREDS[:4]
+        for user, pwd in creds:
             data = self._credential_data(user, pwd)
             if token:
                 data["csrf_token"] = token
@@ -114,11 +115,12 @@ class AuthModule(BaseModule):
 
     def _test_lockout_signal(self, login_url: str):
         statuses = []
-        for i in range(1, 7):
+        attempts = 8 if self.settings.is_aggressive() else 4
+        for i in range(1, attempts + 1):
             resp = self.post(login_url, data=self._credential_data("vulxor-test", f"wrong-{i}"))
             if resp:
                 statuses.append(resp.status_code)
-        if len(statuses) >= 5 and all(code not in (401, 403, 423, 429) for code in statuses[-3:]):
+        if len(statuses) >= min(5, attempts) and all(code not in (401, 403, 423, 429) for code in statuses[-3:]):
             self.add_finding(
                 severity="LOW",
                 title="No obvious login lockout signal",

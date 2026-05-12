@@ -27,7 +27,8 @@ class IdorModule(BaseModule):
             base_len = len(base.text)
             miss = self.get(self._object_url(endpoint, 999999))
             miss_len = len(miss.text) if miss else base_len
-            for obj_id in range(1, 21):
+            max_id = 50 if self.settings.is_aggressive() else 10
+            for obj_id in range(1, max_id + 1):
                 resp = self.get(self._object_url(endpoint, obj_id))
                 if not resp:
                     continue
@@ -67,7 +68,7 @@ class IdorModule(BaseModule):
             if key not in seen:
                 seen.add(key)
                 out.append(item)
-        return out[:30]
+        return out[:50 if self.settings.is_aggressive() else 20]
 
     def _object_url(self, endpoint, obj_id):
         if endpoint["kind"] == "prefix":

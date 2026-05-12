@@ -234,6 +234,7 @@ class ReportGenerator:
     def _settings_summary(self) -> dict:
         return {
             "modules": self.settings.modules,
+            "profile": self.settings.profile,
             "threads": self.settings.threads,
             "timeout": self.settings.timeout,
             "delay": self.settings.delay,
