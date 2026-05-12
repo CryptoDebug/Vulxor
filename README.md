@@ -182,7 +182,7 @@ python main.py --help
 
 ## Reports
 
-Reports are written to the `reports/` directory by default. Generated report files are intentionally ignored by Git so scan output does not get committed accidentally. Reports include findings, a non-sensitive scan configuration summary, and metadata such as crawled pages, forms, discovered paths, and external tool execution status.
+Reports are written to the `reports/` directory by default. Generated report files are intentionally ignored by Git so scan output does not get committed accidentally. Reports include an executive summary, scope, risk rating, recommended next steps, findings with reproduction guidance, a non-sensitive scan configuration summary, and metadata such as crawled pages, forms, discovered paths, and external tool execution status.
 
 | Format | Use case |
 | --- | --- |

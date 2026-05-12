@@ -26,6 +26,7 @@ class ReportGenerator:
     def generate(self, fmt: str):
         self.results.finish()
         self.results.meta.setdefault("configuration", self._settings_summary())
+        self.results.meta.setdefault("report_summary", self._executive_summary())
         if fmt in ("json", "all"):
             self._write_json()
         if fmt in ("txt", "all"):
@@ -37,7 +38,7 @@ class ReportGenerator:
 
     def _write_json(self):
         path = os.path.join(self.settings.output_dir, f"report_{self.ts}.json")
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(self.results.to_dict(), f, indent=2)
 
     # ── TXT ────────────────────────────────────────────────────────────────
@@ -51,6 +52,18 @@ class ReportGenerator:
             f"  Target    : {self.results.target}",
             f"  Started   : {self.results.started_at}",
             f"  Finished  : {self.results.finished_at}",
+            f"  Risk      : {self._risk_rating()}",
+            "",
+            "  EXECUTIVE SUMMARY",
+            "  " + "-" * 30,
+            self._executive_text(indent="  "),
+            "",
+            "  SCOPE",
+            "  " + "-" * 30,
+            f"  Target URL      : {self.results.target}",
+            f"  Profile         : {self.settings.profile}",
+            f"  Modules         : {', '.join(self.settings.modules)}",
+            f"  External tools  : {'enabled' if self.settings.external_tools else 'disabled'}",
             "",
             "  SUMMARY",
             "  " + "-" * 30,
@@ -82,10 +95,14 @@ class ReportGenerator:
                 lines.append(f"  Payload  : {f.payload}")
             if f.evidence:
                 lines.append(f"  Evidence : {f.evidence[:120]}")
+            lines += [
+                "  Reproduce:",
+                *[f"    {i}. {step}" for i, step in enumerate(self._finding_steps(f), 1)],
+            ]
             if f.remediation:
                 lines.append(f"  Fix      : {f.remediation}")
         lines.append("\n" + "=" * 70)
-        with open(path, "w") as fh:
+        with open(path, "w", encoding="utf-8") as fh:
             fh.write("\n".join(lines))
 
     # ── HTML ───────────────────────────────────────────────────────────────
@@ -109,6 +126,8 @@ class ReportGenerator:
                 f'<tr><th>Remediation</th><td>{self._esc(f.remediation)}</td></tr>'
                 if f.remediation else ""
             )
+            steps = "".join(f"<li>{self._esc(step)}</li>" for step in self._finding_steps(f))
+            steps_row = f"<tr><th>Reproduce</th><td><ol>{steps}</ol></td></tr>"
             findings_html += f"""
             <div class="finding">
               <div class="finding-header" style="border-left:5px solid {color}">
@@ -121,6 +140,7 @@ class ReportGenerator:
                 <tr><th>Detail</th><td>{self._esc(f.detail)}</td></tr>
                 {payload_row}
                 {evidence_row}
+                {steps_row}
                 {fix_row}
                 <tr><th>Time</th><td>{f.timestamp}</td></tr>
               </table>
@@ -141,6 +161,15 @@ class ReportGenerator:
 
         config_html = self._esc(self._metadata_text(self._settings_summary()))
         metadata_html = self._esc(self._metadata_text(self.results.meta))
+        executive = self._executive_summary()
+        executive_html = "".join(
+            f"<li>{self._esc(item)}</li>"
+            for item in executive["key_points"]
+        )
+        recommendations_html = "".join(
+            f"<li>{self._esc(item)}</li>"
+            for item in executive["recommended_next_steps"]
+        )
 
         html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -183,6 +212,13 @@ class ReportGenerator:
   .finding-table td {{ padding:.5rem 1rem; border-top: 1px solid var(--border);
                        word-break:break-all; }}
   .finding-table td a {{ color: var(--accent); text-decoration:none; }}
+  ol, ul {{ padding-left:1.2rem; }}
+  li {{ margin:.25rem 0; }}
+  .panel {{ background: var(--bg2); border:1px solid var(--border); border-radius:8px;
+            padding:1rem; margin:1rem 0; }}
+  .panel-grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:1rem; }}
+  .label {{ color: var(--text2); font-size:.75rem; text-transform:uppercase; letter-spacing:1px; }}
+  .value {{ margin-top:.35rem; color: var(--text); }}
   code {{ background: var(--bg); padding:.1rem .4rem; border-radius:3px;
           font-family: var(--font); font-size:.8rem; }}
   pre {{ background: var(--bg2); border:1px solid var(--border); border-radius:8px;
@@ -201,11 +237,29 @@ class ReportGenerator:
     <div class="meta-item">Started <span>{self.results.started_at}</span></div>
     <div class="meta-item">Finished <span>{self.results.finished_at}</span></div>
     <div class="meta-item">Total findings <span>{total}</span></div>
+    <div class="meta-item">Risk <span>{self._risk_rating()}</span></div>
   </div>
 </header>
 
+<h2>Executive Summary</h2>
+<div class="panel">
+  <p>{self._esc(executive["overview"])}</p>
+  <ul>{executive_html}</ul>
+</div>
+
+<h2>Scope</h2>
+<div class="panel-grid">
+  <div class="panel"><div class="label">Target</div><div class="value">{self._esc(self.results.target)}</div></div>
+  <div class="panel"><div class="label">Profile</div><div class="value">{self.settings.profile}</div></div>
+  <div class="panel"><div class="label">Modules</div><div class="value">{self._esc(', '.join(self.settings.modules))}</div></div>
+  <div class="panel"><div class="label">External tools</div><div class="value">{'enabled' if self.settings.external_tools else 'disabled'}</div></div>
+</div>
+
 <h2>Severity Summary</h2>
 <div class="cards">{cards_html}</div>
+
+<h2>Recommended Next Steps</h2>
+<div class="panel"><ol>{recommendations_html}</ol></div>
 
 <h2>Scan Configuration</h2>
 <pre>{config_html}</pre>
@@ -219,7 +273,7 @@ class ReportGenerator:
 <footer>Generated by Vulxor &mdash; Authorised use only</footer>
 </body>
 </html>"""
-        with open(path, "w") as fh:
+        with open(path, "w", encoding="utf-8") as fh:
             fh.write(html)
 
     @staticmethod
@@ -230,6 +284,86 @@ class ReportGenerator:
                   .replace("<", "&lt;")
                   .replace(">", "&gt;")
                   .replace('"', "&quot;"))
+
+    def _risk_rating(self) -> str:
+        counts = self.results.count_by_severity()
+        if counts.get("CRITICAL", 0):
+            return "Critical"
+        if counts.get("HIGH", 0):
+            return "High"
+        if counts.get("MEDIUM", 0):
+            return "Medium"
+        if counts.get("LOW", 0):
+            return "Low"
+        return "Informational"
+
+    def _executive_summary(self) -> dict:
+        counts = self.results.count_by_severity()
+        total = sum(counts.values())
+        risk = self._risk_rating()
+        top_modules = self._top_modules()
+        overview = (
+            f"Vulxor assessed {self.results.target} with the {self.settings.profile} profile "
+            f"and recorded {total} finding(s). Overall observed risk is {risk.lower()}."
+        )
+        key_points = [
+            f"Severity mix: " + ", ".join(
+                f"{sev}={counts.get(sev, 0)}" for sev in self.SEVERITY_ORDER
+            ),
+            f"Most active modules: {', '.join(top_modules) if top_modules else 'none'}",
+            f"External tools were {'enabled' if self.settings.external_tools else 'not enabled'} for this run.",
+        ]
+        return {
+            "risk": risk,
+            "total_findings": total,
+            "key_points": key_points,
+            "overview": overview,
+            "recommended_next_steps": self._recommended_next_steps(counts),
+        }
+
+    def _executive_text(self, indent: str = "") -> str:
+        summary = self._executive_summary()
+        lines = [summary["overview"], ""]
+        lines.extend(f"- {item}" for item in summary["key_points"])
+        lines.append("")
+        lines.append("Recommended next steps:")
+        lines.extend(f"{i}. {item}" for i, item in enumerate(summary["recommended_next_steps"], 1))
+        if not indent:
+            return "\n".join(lines)
+        return "\n".join(indent + line if line else "" for line in lines)
+
+    def _recommended_next_steps(self, counts) -> list:
+        steps = []
+        if counts.get("CRITICAL", 0) or counts.get("HIGH", 0):
+            steps.append("Prioritise validation and remediation of Critical and High findings.")
+        if counts.get("MEDIUM", 0):
+            steps.append("Schedule Medium findings after confirming exploitability and affected routes.")
+        steps.append("Manually validate automated findings before reporting them outside the assessment team.")
+        steps.append("Retest fixed issues with the same profile and modules to confirm remediation.")
+        return steps
+
+    def _top_modules(self) -> list:
+        module_counts = {
+            module: len(findings)
+            for module, findings in self.results.findings.items()
+            if findings
+        }
+        return [
+            module
+            for module, _count in sorted(module_counts.items(), key=lambda item: item[1], reverse=True)[:5]
+        ]
+
+    def _finding_steps(self, finding) -> list:
+        steps = [
+            f"Open {finding.url}.",
+            f"Run or reproduce the {finding.module} check in the same authenticated context used for the scan.",
+        ]
+        if finding.payload:
+            steps.append(f"Submit the payload or test value: {finding.payload}.")
+        if finding.evidence:
+            steps.append("Compare the response with the evidence captured in this report.")
+        steps.append("Validate impact manually and confirm the affected user role or endpoint scope.")
+        return steps
 
     def _settings_summary(self) -> dict:
         return {
