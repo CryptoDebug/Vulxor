@@ -1,4 +1,6 @@
+import html
 import re
+from urllib.parse import parse_qs, urlparse
 from modules.base import BaseModule
 
 
@@ -35,10 +37,13 @@ class XssModule(BaseModule):
 
     def _test_reflected(self):
         for url in self._candidate_pages():
-            for param in self.COMMON_PARAMS:
+            for param in self._param_candidates(url):
                 for payload in self.PAYLOADS[:6]:  # Top payloads just for speed
                     resp = self.get(url, params={param: payload})
-                    if resp and payload in resp.text:
+                    if not resp:
+                        continue
+                    reflection = self._reflection_state(resp.text, payload)
+                    if reflection == "raw":
                         self.add_finding(
                             severity="HIGH",
                             title="Reflected XSS",
@@ -49,6 +54,17 @@ class XssModule(BaseModule):
                             remediation="Escape all user-supplied output; implement a strict CSP.",
                         )
                         break
+                    if reflection == "escaped":
+                        self.add_finding(
+                            severity="INFO",
+                            title="Escaped XSS payload reflection",
+                            url=url,
+                            detail=f"Parameter '{param}' reflects encoded user input; manual review may still be useful.",
+                            payload=payload,
+                            evidence=self._extract_context(resp.text, html.escape(payload, quote=False)),
+                            remediation="Keep output encoding context-aware and maintain a restrictive CSP.",
+                        )
+                        break
 
     def _test_forms(self):
         for form in self._crawl_forms():
@@ -57,7 +73,7 @@ class XssModule(BaseModule):
                 target_url = form["action"]
                 r = self.post(target_url, data=data) if form["method"] == "post" \
                     else self.get(target_url, params=data)
-                if r and payload in r.text:
+                if r and self._reflection_state(r.text, payload) == "raw":
                     self.add_finding(
                         severity="HIGH",
                         title="Reflected XSS via form",
@@ -79,7 +95,7 @@ class XssModule(BaseModule):
                 target_url = self.url(form["action"])
                 r = self.post(target_url, data=data) if form["method"] == "post" \
                     else self.get(target_url, params=data)
-                if r and payload in r.text:
+                if r and self._reflection_state(r.text, payload) == "raw":
                     self.add_finding(
                         severity="HIGH",
                         title="Reflected XSS via form",
@@ -147,6 +163,22 @@ class XssModule(BaseModule):
                 out.append(url)
         return out[:20]
 
+    def _param_candidates(self, url):
+        parsed = urlparse(url)
+        params = list(parse_qs(parsed.query).keys())
+        crawl = self.results.meta.get("crawl", {})
+        for page in crawl.get("pages", []):
+            if page.get("url") == url:
+                params.extend(page.get("params", []))
+        params.extend(self.COMMON_PARAMS)
+        out = []
+        seen = set()
+        for param in params:
+            if param and param not in seen:
+                seen.add(param)
+                out.append(param)
+        return out[:20]
+
     def _crawl_forms(self):
         crawl = self.results.meta.get("crawl", {})
         forms = []
@@ -160,3 +192,11 @@ class XssModule(BaseModule):
                 "inputs": form.get("inputs", []),
             })
         return forms[:10]
+
+    def _reflection_state(self, body, payload):
+        if payload in body:
+            return "raw"
+        escaped = html.escape(payload, quote=False)
+        if escaped in body or html.escape(payload, quote=True) in body:
+            return "escaped"
+        return ""

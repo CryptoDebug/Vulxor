@@ -1,3 +1,4 @@
+import hashlib
 import os
 import re
 from collections import deque
@@ -28,11 +29,13 @@ class CrawlModule(BaseModule):
         self.log.info("[crawl] Mapping in-scope pages and paths")
         pages, forms = self._crawl_pages()
         paths = self._discover_paths()
+        stats = self._scan_stats(pages, forms, paths)
 
         self.results.meta["crawl"] = {
             "pages": pages,
             "forms": forms,
             "paths": paths,
+            "stats": stats,
         }
 
         if pages:
@@ -85,6 +88,9 @@ class CrawlModule(BaseModule):
                 "status": resp.status_code,
                 "title": self._title(resp.text),
                 "content_type": content_type.split(";")[0],
+                "bytes": len(resp.content or b""),
+                "fingerprint": self._fingerprint(resp),
+                "params": self._query_params(url),
             }
             pages.append(page)
 
@@ -141,6 +147,7 @@ class CrawlModule(BaseModule):
             "status": resp.status_code,
             "bytes": len(resp.content or b""),
             "content_type": resp.headers.get("Content-Type", "").split(";")[0],
+            "fingerprint": self._fingerprint(resp),
         }
 
     def _load_wordlist(self):
@@ -179,6 +186,8 @@ class CrawlModule(BaseModule):
                 "action": urljoin(base_url, action.group(1) if action else base_url),
                 "method": (method.group(1) if method else "get").lower(),
                 "inputs": sorted(set(inputs)),
+                "has_password": bool(re.search(r'<input[^>]+type=["\']password["\']', form_html, re.I)),
+                "has_csrf": bool(re.search(r'name=["\'](?:csrf[_-]?token|_token)["\']', form_html, re.I)),
             })
         return forms
 
@@ -213,3 +222,31 @@ class CrawlModule(BaseModule):
     def _looks_sensitive(self, url):
         low = url.lower()
         return any(hint in low for hint in self.SENSITIVE_HINTS)
+
+    def _scan_stats(self, pages, forms, paths):
+        return {
+            "pages_crawled": len(pages),
+            "forms_discovered": len(forms),
+            "paths_discovered": len(paths),
+            "login_forms": len([f for f in forms if f.get("has_password")]),
+            "protected_paths": len([p for p in paths if p.get("status") in (401, 403)]),
+        }
+
+    def _query_params(self, url):
+        parsed = urlparse(url)
+        if not parsed.query:
+            return []
+        return sorted({
+            part.split("=", 1)[0]
+            for part in parsed.query.split("&")
+            if part.split("=", 1)[0]
+        })
+
+    def _fingerprint(self, resp):
+        marker = "\n".join([
+            str(resp.status_code),
+            resp.headers.get("Content-Type", ""),
+            str(len(resp.content or b"")),
+            resp.text[:500] if hasattr(resp, "text") else "",
+        ])
+        return hashlib.sha256(marker.encode("utf-8", errors="ignore")).hexdigest()[:16]

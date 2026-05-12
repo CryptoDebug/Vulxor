@@ -36,13 +36,21 @@ class AuthModule(BaseModule):
         self._test_default_creds(login_url)
         self._test_header_bypass(login_url)
         self._test_sql_auth_bypass(login_url)
+        self._test_lockout_signal(login_url)
 
     def _find_login(self):
+        for form in self.results.meta.get("crawl", {}).get("forms", []):
+            if form.get("has_password"):
+                self._login_fields = self._field_names(form.get("inputs", []))
+                return form.get("action")
+
         for path in self.LOGIN_PATHS:
             resp = self.get(path)
             if resp and resp.status_code == 200 and re.search(
                 r'<input[^>]+type=["\']password["\']', resp.text, re.I
             ):
+                inputs = re.findall(r'<input[^>]+name=["\']([^"\']+)["\']', resp.text, re.I)
+                self._login_fields = self._field_names(inputs)
                 return self.url(path)
         return None
 
@@ -59,7 +67,7 @@ class AuthModule(BaseModule):
             return
         token = self._extract_csrf(resp0.text)
         for user, pwd in self.DEFAULT_CREDS:
-            data = {"username": user, "password": pwd}
+            data = self._credential_data(user, pwd)
             if token:
                 data["csrf_token"] = token
             r = self.post(login_url, data=data)
@@ -92,7 +100,7 @@ class AuthModule(BaseModule):
             ("' OR 1=1--", "x"),
         ]
         for user, pwd in sqli_creds:
-            r = self.post(login_url, data={"username": user, "password": pwd})
+            r = self.post(login_url, data=self._credential_data(user, pwd))
             if self._success(r):
                 self.add_finding(
                     severity="CRITICAL",
@@ -104,9 +112,40 @@ class AuthModule(BaseModule):
                 )
                 return
 
+    def _test_lockout_signal(self, login_url: str):
+        statuses = []
+        for i in range(1, 7):
+            resp = self.post(login_url, data=self._credential_data("vulxor-test", f"wrong-{i}"))
+            if resp:
+                statuses.append(resp.status_code)
+        if len(statuses) >= 5 and all(code not in (401, 403, 423, 429) for code in statuses[-3:]):
+            self.add_finding(
+                severity="LOW",
+                title="No obvious login lockout signal",
+                url=login_url,
+                detail="Multiple failed login attempts did not return a lockout or rate-limit status.",
+                evidence=f"Observed status codes: {statuses}",
+                remediation="Use account lockout, throttling, or risk-based controls for repeated failed logins.",
+            )
+
     def _extract_csrf(self, html: str):
         m = re.search(
             r'<input[^>]+name=["\'](?:csrf[_-]?token|_token)["\'][^>]+value=["\']([^"\']+)["\']',
             html, re.I
         )
         return m.group(1) if m else None
+
+    def _field_names(self, inputs):
+        user_field = "username"
+        pass_field = "password"
+        for name in inputs:
+            low = name.lower()
+            if low in ("user", "username", "email", "login", "userid"):
+                user_field = name
+            if "pass" in low or low in ("pwd", "password"):
+                pass_field = name
+        return user_field, pass_field
+
+    def _credential_data(self, user, password):
+        user_field, pass_field = getattr(self, "_login_fields", ("username", "password"))
+        return {user_field: user, pass_field: password}

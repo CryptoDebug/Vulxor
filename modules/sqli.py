@@ -75,6 +75,7 @@ class SqliModule(BaseModule):
         for base_url, params in self._url_targets():
             for param in params:
                 self._run_error_tests(base_url, param)
+                self._run_boolean_tests(base_url, param)
                 self._run_time_tests(base_url, param)
                 self._run_union_tests(base_url, param)
 
@@ -84,6 +85,7 @@ class SqliModule(BaseModule):
                 continue
             for name in form["inputs"][:10]:
                 self._run_error_tests(form["action"], name, method=form["method"].upper())
+                self._run_boolean_tests(form["action"], name, method=form["method"].upper())
 
         # Fallback: discover forms in the homepage when the crawl module was not run.
         resp = self.get(self.target)
@@ -127,6 +129,33 @@ class SqliModule(BaseModule):
                 )
                 return
 
+    def _run_boolean_tests(self, url: str, param: str, method: str = "GET"):
+        baseline = self._inject(url, param, "vulxor_baseline", method)
+        if not baseline:
+            return
+
+        for true_payload, false_payload in self.BOOLEAN_PAYLOADS:
+            true_resp = self._inject(url, param, true_payload, method)
+            false_resp = self._inject(url, param, false_payload, method)
+            if not true_resp or not false_resp:
+                continue
+
+            if self._looks_boolean_diff(baseline, true_resp, false_resp):
+                self.add_finding(
+                    severity="HIGH",
+                    title="SQL Injection - Boolean-based blind",
+                    url=url,
+                    detail=f"Parameter '{param}' produced a consistent true/false response difference.",
+                    payload=f"{true_payload} / {false_payload}",
+                    evidence=(
+                        f"baseline={self._signature(baseline)} "
+                        f"true={self._signature(true_resp)} "
+                        f"false={self._signature(false_resp)}"
+                    ),
+                    remediation="Use parameterised queries / prepared statements.",
+                )
+                return
+
     def _run_union_tests(self, url: str, param: str, method: str = "GET"):
         for payload in self.UNION_PAYLOADS:
             resp = self._inject(url, param, payload, method)
@@ -154,6 +183,10 @@ class SqliModule(BaseModule):
             url = page.get("url")
             if url:
                 targets.append(url)
+        for path in crawl.get("paths", []):
+            url = path.get("url")
+            if url:
+                targets.append(url)
         targets.extend([self.target, f"{self.target}/index.php"])
 
         seen = set()
@@ -164,7 +197,8 @@ class SqliModule(BaseModule):
                 continue
             seen.add(base_url)
             query_params = list(parse_qs(parsed.query).keys())
-            yield base_url, query_params or self.COMMON_PARAMS
+            known_params = query_params or self._page_params(url) or self.COMMON_PARAMS
+            yield base_url, known_params
 
     def _crawl_forms(self):
         crawl = self.results.meta.get("crawl", {})
@@ -179,6 +213,26 @@ class SqliModule(BaseModule):
                 "inputs": form.get("inputs", []),
             })
         return forms[:10]
+
+    def _page_params(self, url):
+        crawl = self.results.meta.get("crawl", {})
+        for page in crawl.get("pages", []):
+            if page.get("url") == url:
+                return page.get("params", [])
+        return []
+
+    def _looks_boolean_diff(self, baseline, true_resp, false_resp):
+        if true_resp.status_code != false_resp.status_code:
+            return true_resp.status_code == baseline.status_code
+        true_len = len(true_resp.text)
+        false_len = len(false_resp.text)
+        baseline_len = len(baseline.text)
+        if abs(true_len - false_len) < max(80, int(max(true_len, false_len) * 0.08)):
+            return False
+        return abs(true_len - baseline_len) < abs(false_len - baseline_len)
+
+    def _signature(self, resp):
+        return f"{resp.status_code}/{len(resp.text)}"
 
     def _is_error(self, body: str) -> bool:
         return any(re.search(p, body, re.I) for p in self.DB_ERROR_PATTERNS)
