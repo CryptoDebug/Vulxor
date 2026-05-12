@@ -13,6 +13,8 @@ MODULE_MAP = {
     "xss":        ("modules.xss", "XssModule"),
     "auth":       ("modules.auth", "AuthModule"),
     "idor":       ("modules.idor", "IdorModule"),
+    "crawl":      ("modules.crawl", "CrawlModule"),
+    "tools":      ("modules.tools", "ToolsModule"),
     "upload":     ("modules.upload", "UploadModule"),
     "lfi":        ("modules.lfi", "LfiModule"),
     "ssrf":       ("modules.ssrf", "SsrfModule"),

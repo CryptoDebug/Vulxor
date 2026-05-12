@@ -13,6 +13,11 @@ class Settings:
     headers: Optional[str] = None
     auth: Optional[str] = None
     wordlist: Optional[str] = None
+    crawl_depth: int = 2
+    max_pages: int = 50
+    external_tools: bool = False
+    tools: Optional[str] = None
+    tool_timeout: int = 120
     delay: float = 0.0
     verbose: bool = False
     output_dir: str = "reports"
@@ -42,3 +47,12 @@ class Settings:
         if not self.proxy:
             return None
         return {"http": self.proxy, "https": self.proxy}
+
+    def parsed_tools(self) -> List[str]:
+        if not self.tools:
+            return []
+        return [
+            item.strip().lower()
+            for item in self.tools.split(",")
+            if item.strip()
+        ]

@@ -34,6 +34,7 @@ def parse_args():
         nargs="+",
         choices=[
             "recon", "sqli", "xss", "auth", "idor",
+            "crawl", "tools",
             "upload", "lfi", "ssrf", "xxe", "ssti",
             "nosql", "cors", "jwt", "waf", "csrf",
             "desync", "race", "ratelimit", "websocket",
@@ -50,6 +51,18 @@ def parse_args():
     parser.add_argument("--headers", help="Custom headers (format: Header:Value,Header2:Value2)")
     parser.add_argument("--auth", help="Basic auth (format: user:pass)")
     parser.add_argument("--wordlist", help="Custom wordlist for directory brute-forcing")
+    parser.add_argument("--crawl-depth", type=int, default=2, help="Maximum crawl depth")
+    parser.add_argument("--max-pages", type=int, default=50, help="Maximum pages to crawl")
+    parser.add_argument(
+        "--external-tools",
+        action="store_true",
+        help="Allow optional external tool integrations when the tools module runs",
+    )
+    parser.add_argument(
+        "--tools",
+        help="Comma-separated external tools to run (default: nmap,nikto,whatweb,wafw00f,sqlmap,zap-baseline)",
+    )
+    parser.add_argument("--tool-timeout", type=int, default=120, help="External tool timeout in seconds")
     parser.add_argument("--delay", type=float, default=0.0, help="Delay between requests (seconds)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument("--no-banner", action="store_true", help="Suppress banner")
@@ -77,6 +90,11 @@ def main():
         headers=args.headers,
         auth=args.auth,
         wordlist=args.wordlist,
+        crawl_depth=args.crawl_depth,
+        max_pages=args.max_pages,
+        external_tools=args.external_tools,
+        tools=args.tools,
+        tool_timeout=args.tool_timeout,
         delay=args.delay,
         verbose=args.verbose,
         output_dir=args.output,
