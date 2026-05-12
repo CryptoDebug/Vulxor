@@ -1,5 +1,6 @@
 import re
 import time
+from urllib.parse import parse_qs, urlparse, urlunparse
 
 from modules.base import BaseModule
 
@@ -71,14 +72,20 @@ class SqliModule(BaseModule):
         self._test_form_params()
 
     def _test_url_params(self):
-        for param in self.COMMON_PARAMS:
-            base_url = f"{self.target}/index.php"
-            self._run_error_tests(base_url, param)
-            self._run_time_tests(base_url, param)
-            self._run_union_tests(base_url, param)
+        for base_url, params in self._url_targets():
+            for param in params:
+                self._run_error_tests(base_url, param)
+                self._run_time_tests(base_url, param)
+                self._run_union_tests(base_url, param)
 
     def _test_form_params(self):
-        """Discover forms in the homepage and test their inputs."""
+        for form in self._crawl_forms():
+            if not form["inputs"]:
+                continue
+            for name in form["inputs"][:10]:
+                self._run_error_tests(form["action"], name, method=form["method"].upper())
+
+        # Fallback: discover forms in the homepage when the crawl module was not run.
         resp = self.get(self.target)
         if not resp:
             return
@@ -139,6 +146,39 @@ class SqliModule(BaseModule):
         if method == "GET":
             return self.get(url, params={param: payload})
         return self.post(url, data={param: payload})
+
+    def _url_targets(self):
+        targets = []
+        crawl = self.results.meta.get("crawl", {})
+        for page in crawl.get("pages", []):
+            url = page.get("url")
+            if url:
+                targets.append(url)
+        targets.extend([self.target, f"{self.target}/index.php"])
+
+        seen = set()
+        for url in targets[:20]:
+            parsed = urlparse(url)
+            base_url = urlunparse(parsed._replace(query="", fragment=""))
+            if not base_url or base_url in seen:
+                continue
+            seen.add(base_url)
+            query_params = list(parse_qs(parsed.query).keys())
+            yield base_url, query_params or self.COMMON_PARAMS
+
+    def _crawl_forms(self):
+        crawl = self.results.meta.get("crawl", {})
+        forms = []
+        for form in crawl.get("forms", []):
+            method = form.get("method", "get").lower()
+            if method not in ("get", "post"):
+                method = "get"
+            forms.append({
+                "action": form.get("action") or self.target,
+                "method": method,
+                "inputs": form.get("inputs", []),
+            })
+        return forms[:10]
 
     def _is_error(self, body: str) -> bool:
         return any(re.search(p, body, re.I) for p in self.DB_ERROR_PATTERNS)

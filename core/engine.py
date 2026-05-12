@@ -9,12 +9,11 @@ from modules.base import BaseModule
 
 MODULE_MAP = {
     "recon":      ("modules.recon", "ReconModule"),
+    "crawl":      ("modules.crawl", "CrawlModule"),
     "sqli":       ("modules.sqli", "SqliModule"),
     "xss":        ("modules.xss", "XssModule"),
     "auth":       ("modules.auth", "AuthModule"),
     "idor":       ("modules.idor", "IdorModule"),
-    "crawl":      ("modules.crawl", "CrawlModule"),
-    "tools":      ("modules.tools", "ToolsModule"),
     "upload":     ("modules.upload", "UploadModule"),
     "lfi":        ("modules.lfi", "LfiModule"),
     "ssrf":       ("modules.ssrf", "SsrfModule"),
@@ -32,6 +31,7 @@ MODULE_MAP = {
     "graphql":    ("modules.graphql", "GraphqlModule"),
     "2fa":        ("modules.twofa", "TwofaModule"),
     "captcha":    ("modules.captcha", "CaptchaModule"),
+    "tools":      ("modules.tools", "ToolsModule"),
 }
 
 
