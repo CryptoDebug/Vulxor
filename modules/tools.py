@@ -14,12 +14,15 @@ class ToolsModule(BaseModule):
     def run(self):
         self.log.info("[tools] Checking optional external integrations")
         if not self.settings.external_tools:
-            self.add_finding(
-                severity="INFO",
-                title="External tool execution disabled",
-                url=self.target,
-                detail="Run with --external-tools and --modules tools to execute installed integrations.",
-            )
+            if "tools" in self.settings.modules:
+                self.add_finding(
+                    severity="INFO",
+                    title="External tool execution disabled",
+                    url=self.target,
+                    detail="Run with --external-tools and --modules tools to execute installed integrations.",
+                )
+            else:
+                self.log.debug("[tools] Skipping external tools; pass --external-tools to enable them")
             return
 
         requested = self.settings.parsed_tools() or self.DEFAULT_TOOLS
