@@ -9,6 +9,8 @@ Vulxor is a Python-based web application security testing toolkit for authorised
 - Modular scan engine with selectable checks.
 - Shared HTTP session support for cookies, headers, proxy, basic auth, timeout, and delay.
 - Reconnaissance and vulnerability-oriented modules for common web security issues.
+- Scoped crawler with form/link discovery and wordlist-based path discovery.
+- Optional wrappers for installed external tools such as Nmap, Nikto, WhatWeb, WAFW00F, SQLMap, and ZAP baseline.
 - Report generation in machine-readable and human-readable formats.
 - Simple module API for extending the toolkit.
 
@@ -21,6 +23,8 @@ Vulxor is a Python-based web application security testing toolkit for authorised
 | `xss` | Reflected and DOM XSS checks |
 | `auth` | Authentication bypass and default credential checks |
 | `idor` | Insecure direct object reference checks |
+| `crawl` | Scoped crawling, form discovery, and wordlist path discovery |
+| `tools` | Optional external tool integrations, disabled unless `--external-tools` is set |
 | `upload` | Unrestricted file upload checks |
 | `lfi` | Local and remote file inclusion checks |
 | `ssrf` | Server-side request forgery checks |
@@ -68,6 +72,7 @@ vulxor/
 - Python 3.10 or newer
 - Network access to the authorised target
 - Optional: an intercepting proxy such as Burp Suite or OWASP ZAP
+- Optional external tools on `PATH`: `nmap`, `nikto`, `whatweb`, `wafw00f`, `sqlmap`, or `zap-baseline.py`
 
 ## Installation
 
@@ -125,6 +130,18 @@ Generate only one report format:
 python main.py https://target.example.com --report-format html
 ```
 
+Map pages and discover paths with a custom wordlist:
+
+```bash
+python main.py https://target.example.com --modules crawl --wordlist wordlists/common.txt --crawl-depth 2 --max-pages 100
+```
+
+Run optional external integrations:
+
+```bash
+python main.py https://target.example.com --modules tools --external-tools --tools nmap,nikto,whatweb
+```
+
 Display the built-in help:
 
 ```bash
@@ -146,6 +163,11 @@ python main.py --help
 | `--headers` | Headers in `Header:Value,Header2:Value2` format |
 | `--auth` | Basic auth credentials in `user:pass` format |
 | `--wordlist` | Custom wordlist path for modules that support it |
+| `--crawl-depth` | Maximum in-scope crawl depth |
+| `--max-pages` | Maximum number of pages to crawl |
+| `--external-tools` | Permit the `tools` module to execute installed external commands |
+| `--tools` | Comma-separated external tool list |
+| `--tool-timeout` | Timeout for each external tool command |
 | `--delay` | Delay between requests in seconds |
 | `--verbose`, `-v` | Enable verbose output |
 | `--no-banner` | Hide the startup banner |
@@ -153,7 +175,7 @@ python main.py --help
 
 ## Reports
 
-Reports are written to the `reports/` directory by default. Generated report files are intentionally ignored by Git so scan output does not get committed accidentally.
+Reports are written to the `reports/` directory by default. Generated report files are intentionally ignored by Git so scan output does not get committed accidentally. Reports include findings, a non-sensitive scan configuration summary, and metadata such as crawled pages, forms, discovered paths, and external tool execution status.
 
 | Format | Use case |
 | --- | --- |
@@ -197,6 +219,7 @@ class MycheckModule(BaseModule):
 - Keep generated scan reports out of commits unless they are intentionally added as documentation samples.
 - Keep modules small and focused on one vulnerability class.
 - Prefer clear evidence and remediation text for every finding.
+- Keep exploitation checks non-destructive: prove impact with the smallest safe signal and document anything that needs manual validation.
 - Test only in legal lab environments or on authorised targets.
 
 ## Legal Notice

@@ -25,6 +25,7 @@ class ReportGenerator:
 
     def generate(self, fmt: str):
         self.results.finish()
+        self.results.meta.setdefault("configuration", self._settings_summary())
         if fmt in ("json", "all"):
             self._write_json()
         if fmt in ("txt", "all"):
@@ -57,6 +58,19 @@ class ReportGenerator:
         for sev in self.SEVERITY_ORDER:
             count = self.results.count_by_severity().get(sev, 0)
             lines.append(f"  {sev:<10}: {count}")
+        lines += [
+            "",
+            "  CONFIGURATION",
+            "  " + "-" * 30,
+            self._metadata_text(self._settings_summary(), indent="  "),
+        ]
+        if self.results.meta:
+            lines += [
+                "",
+                "  METADATA",
+                "  " + "-" * 30,
+                self._metadata_text(self.results.meta, indent="  "),
+            ]
         lines += ["", "  FINDINGS", "  " + "-" * 30]
         for f in self.results.all_findings():
             lines += [
@@ -125,6 +139,9 @@ class ReportGenerator:
             </div>
             """
 
+        config_html = self._esc(self._metadata_text(self._settings_summary()))
+        metadata_html = self._esc(self._metadata_text(self.results.meta))
+
         html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -168,6 +185,8 @@ class ReportGenerator:
   .finding-table td a {{ color: var(--accent); text-decoration:none; }}
   code {{ background: var(--bg); padding:.1rem .4rem; border-radius:3px;
           font-family: var(--font); font-size:.8rem; }}
+  pre {{ background: var(--bg2); border:1px solid var(--border); border-radius:8px;
+         padding:1rem; overflow:auto; font-size:.78rem; line-height:1.45; }}
   h2 {{ margin: 2rem 0 1rem; font-size:1rem; letter-spacing:2px; color: var(--text2);
         text-transform:uppercase; border-bottom:1px solid var(--border); padding-bottom:.5rem; }}
   footer {{ margin-top:3rem; text-align:center; color: var(--text2); font-size:.75rem; }}
@@ -188,6 +207,12 @@ class ReportGenerator:
 <h2>Severity Summary</h2>
 <div class="cards">{cards_html}</div>
 
+<h2>Scan Configuration</h2>
+<pre>{config_html}</pre>
+
+<h2>Metadata</h2>
+<pre>{metadata_html}</pre>
+
 <h2>Findings ({total})</h2>
 {findings_html if findings_html else '<p style="color:#8b949e">No findings recorded.</p>'}
 
@@ -205,3 +230,29 @@ class ReportGenerator:
                   .replace("<", "&lt;")
                   .replace(">", "&gt;")
                   .replace('"', "&quot;"))
+
+    def _settings_summary(self) -> dict:
+        return {
+            "modules": self.settings.modules,
+            "threads": self.settings.threads,
+            "timeout": self.settings.timeout,
+            "delay": self.settings.delay,
+            "crawl_depth": self.settings.crawl_depth,
+            "max_pages": self.settings.max_pages,
+            "wordlist": bool(self.settings.wordlist),
+            "proxy": bool(self.settings.proxy),
+            "cookies": bool(self.settings.cookies),
+            "headers": bool(self.settings.headers),
+            "basic_auth": bool(self.settings.auth),
+            "external_tools": self.settings.external_tools,
+            "tools": self.settings.parsed_tools(),
+            "tool_timeout": self.settings.tool_timeout,
+            "report_format": self.settings.report_format,
+        }
+
+    @staticmethod
+    def _metadata_text(data, indent: str = "") -> str:
+        text = json.dumps(data, indent=2, default=str)
+        if not indent:
+            return text
+        return "\n".join(indent + line for line in text.splitlines())
