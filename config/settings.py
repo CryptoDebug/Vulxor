@@ -20,6 +20,7 @@ class Settings:
     tools: Optional[str] = None
     tool_timeout: int = 120
     delay: float = 0.0
+    filter_soft_404: bool = True
     verbose: bool = False
     output_dir: str = "reports"
     report_format: str = "all"
