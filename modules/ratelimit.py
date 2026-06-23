@@ -26,6 +26,9 @@ class RatelimitModule(BaseModule):
                 preflight.status_code >= 500:
             self.log.debug("[ratelimit] Login submission endpoint did not produce a usable response")
             return
+        if self.is_probable_not_found(preflight):
+            self.log.debug("[ratelimit] Login submission endpoint is a probable soft 404")
+            return
         results = [None] * request_count
         threads = []
 
@@ -105,6 +108,8 @@ class RatelimitModule(BaseModule):
         for path in self.LOGIN_PATHS:
             response = self.get(path)
             if response is None or response.status_code != 200:
+                continue
+            if self.is_probable_not_found(response):
                 continue
             if not re.search(r'<input\b[^>]*\btype=["\']password["\']', response.text, re.I):
                 continue

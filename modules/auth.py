@@ -50,7 +50,7 @@ class AuthModule(BaseModule):
 
         for path in self.LOGIN_PATHS:
             resp = self.get(path)
-            if resp and resp.status_code == 200 and re.search(
+            if resp and resp.status_code == 200 and not self.is_probable_not_found(resp) and re.search(
                 r'<input[^>]+type=["\']password["\']', resp.text, re.I
             ):
                 inputs = re.findall(r'<input[^>]+name=["\']([^"\']+)["\']', resp.text, re.I)
@@ -59,7 +59,8 @@ class AuthModule(BaseModule):
         return None
 
     def _success(self, resp, baseline=None) -> bool:
-        if not resp or not 200 <= resp.status_code < 400:
+        if not resp or not 200 <= resp.status_code < 400 or \
+                self.is_probable_not_found(resp):
             return False
         if not has_authenticated_marker(resp.text):
             return False
@@ -139,6 +140,8 @@ class AuthModule(BaseModule):
         attempts = 8 if self.settings.is_aggressive() else 4
         for i in range(1, attempts + 1):
             resp = self.post(login_url, data=self._credential_data("vulxor-test", f"wrong-{i}"))
+            if i == 1 and resp is not None and self.is_probable_not_found(resp):
+                return
             if resp:
                 statuses.append(resp.status_code)
         if len(statuses) >= min(5, attempts) and all(code not in (401, 403, 423, 429) for code in statuses[-3:]):

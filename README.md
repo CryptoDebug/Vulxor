@@ -10,6 +10,7 @@ Vulxor is a Python-based web application security testing toolkit for authorised
 - Shared HTTP session support for cookies, headers, proxy, basic auth, timeout, and delay.
 - Reconnaissance and vulnerability-oriented modules for common web security issues.
 - Scoped crawler with form/link discovery and wordlist-based path discovery.
+- Shared custom 404 detection to filter fallback pages across endpoint checks.
 - Optional wrappers for installed external tools such as Nmap, Nikto, WhatWeb, WAFW00F, SQLMap, and ZAP baseline.
 - Report generation in machine-readable and human-readable formats.
 - Simple module API for extending the toolkit.
@@ -176,6 +177,7 @@ python main.py --help
 | `--tools` | Comma-separated external tool list |
 | `--tool-timeout` | Timeout for each external tool command |
 | `--delay` | Delay between requests in seconds |
+| `--no-soft-404-filter` | Disable custom 404 and fallback-page filtering |
 | `--verbose`, `-v` | Enable verbose output |
 | `--no-banner` | Hide the startup banner |
 | `--report-format` | `json`, `txt`, `html`, or `all` |

@@ -33,14 +33,14 @@ class NosqlModule(BaseModule):
         import re
         for path in self.LOGIN_PATHS:
             r = self.get(path)
-            if r and r.status_code == 200 and re.search(
+            if r and r.status_code == 200 and not self.is_probable_not_found(r) and re.search(
                 r'<input[^>]+type=["\']password["\']', r.text, re.I
             ):
                 return self.url(path)
         return None
 
     def _success(self, resp) -> bool:
-        if not resp:
+        if not resp or self.is_probable_not_found(resp):
             return False
         low = resp.text.lower()
         return any(kw in low for kw in ["dashboard", "logout", "welcome"])

@@ -25,7 +25,7 @@ class CaptchaModule(BaseModule):
         if has_captcha:
             return self.target
         r2 = self.get(self.url("/login"))
-        if r2 and re.search(r"captcha", r2.text, re.I):
+        if r2 and not self.is_probable_not_found(r2) and re.search(r"captcha", r2.text, re.I):
             return self.url("/login")
         return None
 
@@ -46,7 +46,7 @@ class CaptchaModule(BaseModule):
             base_data["csrf_token"] = csrf
 
         def success(r):
-            return bool(r and any(
+            return bool(r and not self.is_probable_not_found(r) and any(
                 kw in r.text.lower() for kw in ["dashboard", "logout", "welcome"]
             ))
 

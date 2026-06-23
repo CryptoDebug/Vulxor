@@ -15,6 +15,10 @@ class RaceModule(BaseModule):
             self._race_test(self.url(path))
 
     def _race_test(self, url: str, n: int = 15):
+        preflight = self.post(url, data={"code": "VULXOR-NOT-A-REAL-CODE"})
+        if preflight is None or self.is_probable_not_found(preflight):
+            self.log.debug(f"[race] filtered probable soft 404: {url}")
+            return
         results = [None] * n
         threads = []
 

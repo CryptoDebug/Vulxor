@@ -49,7 +49,7 @@ class TwofaModule(BaseModule):
         return None
 
     def _looks_challenge(self, resp) -> bool:
-        if not resp or resp.status_code != 200:
+        if not resp or resp.status_code != 200 or self.is_probable_not_found(resp):
             return False
         low = resp.text.lower()
         fields = re.findall(r'<input\b[^>]*\bname=["\']([^"\']+)["\']', resp.text, re.I)
@@ -69,7 +69,8 @@ class TwofaModule(BaseModule):
         return bool(names.intersection(name.casefold() for name in self.OTP_PARAMS))
 
     def _is_authed(self, resp) -> bool:
-        if not resp or not 200 <= resp.status_code < 400 or self._looks_challenge(resp):
+        if not resp or not 200 <= resp.status_code < 400 or \
+                self.is_probable_not_found(resp) or self._looks_challenge(resp):
             return False
         return has_authenticated_marker(resp.text)
 

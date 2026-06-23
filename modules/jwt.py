@@ -33,7 +33,7 @@ class JwtModule(BaseModule):
 
     def _find_jwt(self) -> str:
         resp = self.post(self.url("/login"), data={"username": "user", "password": "password"})
-        if not resp:
+        if not resp or self.is_probable_not_found(resp):
             return ""
         for cookie in self.session.cookies:
             if re.search(r"jwt|token|auth", cookie.name, re.I):
@@ -75,6 +75,7 @@ class JwtModule(BaseModule):
             headers={"Authorization": f"Bearer {token}"},
         )
         return bool(resp and resp.status_code == 200 and
+                    not self.is_probable_not_found(resp) and
                     any(kw in resp.text.lower() for kw in ["admin", "dashboard"]))
 
     def _test_none_alg(self, parts, payload):

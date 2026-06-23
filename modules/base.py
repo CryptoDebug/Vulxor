@@ -27,6 +27,12 @@ class BaseModule(ABC):
         "non trouve",
         "non trouvé",
         "page inexistante",
+        "nicht gefunden",
+        "no encontrado",
+        "página no encontrada",
+        "nao encontrado",
+        "não encontrado",
+        "pagina non trovata",
     )
 
     def __init__(self, settings: Settings, log: Logger, results: ScanResults):
@@ -35,8 +41,9 @@ class BaseModule(ABC):
         self.results = results
         self.target = settings.target.rstrip("/")
         self.session = self._build_session()
-        self._missing_baselines = None
-        self._missing_baselines_lock = threading.Lock()
+        if not hasattr(self.results, "_missing_baselines"):
+            self.results._missing_baselines = None
+            self.results._missing_baselines_lock = threading.Lock()
 
     def _build_session(self) -> requests.Session:
         session = requests.Session()
@@ -91,16 +98,24 @@ class BaseModule(ABC):
             return None
 
     def is_probable_not_found(self, response: requests.Response) -> bool:
-        if not response:
+        if response is None:
             return False
         if response.status_code in (404, 410):
             return True
-        if response.status_code != 200 or not self.settings.filter_soft_404:
+        if not self.settings.filter_soft_404:
+            return False
+        if response.status_code != 200 and not 300 <= response.status_code < 400:
             return False
 
         candidate = self._response_signature(response)
         for baseline in self._get_missing_baselines():
-            if baseline["status"] != 200:
+            if baseline["status"] != candidate["status"]:
+                continue
+            if 300 <= candidate["status"] < 400:
+                if candidate["location"] and candidate["location"] == baseline["location"]:
+                    return True
+                continue
+            if candidate["status"] != 200:
                 continue
             if candidate["content_type"] and baseline["content_type"]:
                 if candidate["content_type"] != baseline["content_type"]:
@@ -125,36 +140,45 @@ class BaseModule(ABC):
         return False
 
     def _get_missing_baselines(self):
-        if self._missing_baselines is not None:
-            return self._missing_baselines
+        if self.results._missing_baselines is not None:
+            return self.results._missing_baselines
 
-        with self._missing_baselines_lock:
-            if self._missing_baselines is not None:
-                return self._missing_baselines
+        with self.results._missing_baselines_lock:
+            if self.results._missing_baselines is not None:
+                return self.results._missing_baselines
 
             probes = [
                 f"/__vulxor_missing_{uuid.uuid4().hex}",
-                f"/__vulxor_missing_{uuid.uuid4().hex}.html",
                 f"/{uuid.uuid4().hex}/__vulxor_missing",
             ]
             baselines = []
             for path in probes:
-                response = self._request("GET", path, allow_redirects=False)
-                if response:
-                    baselines.append(self._response_signature(response))
-            self._missing_baselines = baselines
-            return self._missing_baselines
+                for allow_redirects in (False, True):
+                    response = self._request(
+                        "GET",
+                        path,
+                        allow_redirects=allow_redirects,
+                    )
+                    if response is not None:
+                        baselines.append(self._response_signature(response))
+            self.results._missing_baselines = baselines
+            return self.results._missing_baselines
 
     def _response_signature(self, response: requests.Response) -> Dict[str, Any]:
         text = response.text if self._is_text_response(response) else ""
         normalized = self._normalize_for_soft_404(text)
+        digest_source = normalized.encode("utf-8", errors="ignore") \
+            if text else (response.content or b"")
         return {
             "status": response.status_code,
             "content_type": response.headers.get("Content-Type", "").split(";")[0].lower(),
             "length": len(response.content or b""),
             "normalized": normalized,
-            "digest": hashlib.sha256(normalized.encode("utf-8", errors="ignore")).hexdigest(),
+            "digest": hashlib.sha256(digest_source).hexdigest(),
             "has_missing_marker": self._has_missing_marker(normalized),
+            "location": self._normalize_for_soft_404(
+                response.headers.get("Location", "")
+            ),
         }
 
     def _normalize_for_soft_404(self, text: str) -> str:

@@ -27,7 +27,7 @@ class UploadModule(BaseModule):
     def _find_upload(self):
         for path in self.UPLOAD_PATHS:
             r = self.get(path)
-            if r and r.status_code == 200 and re.search(
+            if r and r.status_code == 200 and not self.is_probable_not_found(r) and re.search(
                 r'<input[^>]+type=["\']file["\']', r.text, re.I
             ):
                 return self.url(path)
@@ -42,10 +42,12 @@ class UploadModule(BaseModule):
                 proxies=self.settings.proxies(),
                 verify=False,
             )
-            if r and r.status_code in (200, 201, 302):
+            if r and r.status_code in (200, 201, 302) and \
+                    not self.is_probable_not_found(r):
                 for guess_path in [f"/uploads/{fname}", f"/media/{fname}", f"/files/{fname}"]:
                     check = self.get(guess_path)
-                    if check and check.status_code == 200:
+                    if check and check.status_code == 200 and \
+                            not self.is_probable_not_found(check):
                         self.add_finding(
                             severity="CRITICAL",
                             title="Unrestricted file upload - webshell uploaded",

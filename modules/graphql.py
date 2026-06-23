@@ -22,7 +22,7 @@ class GraphqlModule(BaseModule):
         for path in self.ENDPOINTS:
             url = self.url(path)
             r = self.post(url, json=self.INTROSPECTION, headers=hdrs)
-            if not r or r.status_code != 200:
+            if not r or r.status_code != 200 or self.is_probable_not_found(r):
                 continue
             try:
                 data = r.json()
@@ -38,7 +38,8 @@ class GraphqlModule(BaseModule):
                 )
             for query in self.INJECTION_QUERIES:
                 r2 = self.post(url, json=query, headers=hdrs)
-                if r2 and "password" in r2.text and "errors" not in r2.text:
+                if r2 and not self.is_probable_not_found(r2) and \
+                        "password" in r2.text and "errors" not in r2.text:
                     self.add_finding(
                         severity="HIGH",
                         title="GraphQL sensitive field exposure",

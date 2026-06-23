@@ -34,7 +34,8 @@ class XxeModule(BaseModule):
         for path in self.XML_ENDPOINTS:
             for payload, hint in self.XXE_PAYLOADS:
                 resp = self.post(self.url(path), data=payload, headers=headers)
-                if resp and ("root:" in resp.text or "daemon:" in resp.text):
+                if resp and not self.is_probable_not_found(resp) and \
+                        ("root:" in resp.text or "daemon:" in resp.text):
                     self.add_finding(
                         severity="CRITICAL",
                         title="XML External Entity (XXE) Injection",
