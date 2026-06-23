@@ -3,6 +3,7 @@ import time
 from urllib.parse import parse_qs, urlparse, urlunparse
 
 from modules.base import BaseModule
+from modules.evidence import context_excerpt, new_regex_evidence
 
 
 class SqliModule(BaseModule):
@@ -44,18 +45,18 @@ class SqliModule(BaseModule):
     ]
 
     UNION_PAYLOADS = [
-        "1 UNION SELECT NULL--",
-        "1 UNION SELECT NULL,NULL--",
-        "1 UNION SELECT NULL,NULL,NULL--",
-        "1 UNION SELECT 1,@@version,3--",
-        "1 UNION SELECT 1,user(),3--",
-        "1 UNION SELECT 1,database(),3--",
+        "1 UNION SELECT NULL,CONCAT('vulxor_union_',VERSION()),NULL--",
+        "1 UNION SELECT NULL,'vulxor_union_'||version(),NULL--",
+        "1 UNION SELECT NULL,'vulxor_union_'+@@version,NULL--",
+        "1 UNION SELECT NULL,'vulxor_union_'||sqlite_version(),NULL--",
     ]
 
     DB_ERROR_PATTERNS = [
         r"SQL syntax.*MySQL", r"Warning.*mysql_", r"MySQLSyntaxErrorException",
         r"valid MySQL result", r"ORA-\d{5}", r"Oracle.*ORA-",
-        r"PostgreSQL.*ERROR", r"PSQLException",
+        r"(?:PostgreSQL|Postgres)(?:\s+(?:server|database))?\s+"
+        r"(?:ERROR|FATAL|WARNING)\s*:",
+        r"PSQLException", r"org\.postgresql\.util\.PSQLException",
         r"SQLite.*Exception", r"SQLite3::",
         r"Microsoft.*SQL.*Server", r"ODBC.*SQL Server",
         r"Unclosed quotation mark", r"SqlException",
@@ -100,31 +101,47 @@ class SqliModule(BaseModule):
                 self._run_error_tests(self.url(action), name, method="POST")
 
     def _run_error_tests(self, url: str, param: str, method: str = "GET"):
+        baseline = self._inject(url, param, "vulxor_error_baseline", method)
+        if not baseline:
+            return
         for payload in self._payloads(self.ERROR_PAYLOADS):
             resp = self._inject(url, param, payload, method)
-            if resp and self._is_error(resp.text):
+            evidence = self._new_error(baseline.text, resp.text) if resp else None
+            if evidence:
                 self.add_finding(
                     severity="HIGH",
                     title="SQL Injection - Error-based",
                     url=url,
                     detail=f"Parameter '{param}' reflects a DB error.",
                     payload=payload,
-                    evidence=self._extract_error(resp.text),
+                    evidence=context_excerpt(resp.text, evidence),
                     remediation="Use parameterised queries / prepared statements.",
                 )
                 return
 
     def _run_time_tests(self, url: str, param: str, method: str = "GET"):
+        baseline_start = time.monotonic()
+        baseline = self._inject(url, param, "vulxor_time_baseline", method)
+        baseline_elapsed = time.monotonic() - baseline_start
+        if not baseline:
+            return
         for payload in self._payloads(self.TIME_PAYLOADS):
-            start = time.time()
+            start = time.monotonic()
             resp = self._inject(url, param, payload, method)
-            elapsed = time.time() - start
-            if resp and elapsed >= 4.5:
+            elapsed = time.monotonic() - start
+            if resp and elapsed >= max(4.5, baseline_elapsed + 3.5):
+                confirm_start = time.monotonic()
+                confirm = self._inject(url, param, payload, method)
+                confirm_elapsed = time.monotonic() - confirm_start
+                if not confirm or confirm_elapsed < max(4.5, baseline_elapsed + 3.5):
+                    continue
                 self.add_finding(
                     severity="HIGH",
                     title="SQL Injection - Time-based blind",
                     url=url,
-                    detail=f"Parameter '{param}' caused {elapsed:.1f}s delay.",
+                    detail=(f"Parameter '{param}' caused repeatable delays of "
+                            f"{elapsed:.1f}s and {confirm_elapsed:.1f}s "
+                            f"(baseline {baseline_elapsed:.1f}s)."),
                     payload=payload,
                     remediation="Use parameterised queries / prepared statements.",
                 )
@@ -160,14 +177,16 @@ class SqliModule(BaseModule):
     def _run_union_tests(self, url: str, param: str, method: str = "GET"):
         for payload in self._payloads(self.UNION_PAYLOADS):
             resp = self._inject(url, param, payload, method)
-            if resp and ("@@version" in resp.text or re.search(r"\d+\.\d+\.\d+", resp.text)):
+            marker = re.search(r"vulxor_union_[^<\s\"']{1,120}", resp.text, re.I) \
+                if resp else None
+            if marker and marker.group(0).casefold() not in payload.casefold():
                 self.add_finding(
                     severity="CRITICAL",
                     title="SQL Injection - UNION-based (version leak)",
                     url=url,
                     detail=f"Parameter '{param}' returned DB version via UNION.",
                     payload=payload,
-                    evidence=resp.text[:300],
+                    evidence=context_excerpt(resp.text, marker.group(0)),
                     remediation="Use parameterised queries / prepared statements.",
                 )
                 return
@@ -243,10 +262,5 @@ class SqliModule(BaseModule):
     def _is_error(self, body: str) -> bool:
         return any(re.search(p, body, re.I) for p in self.DB_ERROR_PATTERNS)
 
-    def _extract_error(self, body: str) -> str:
-        for pat in self.DB_ERROR_PATTERNS:
-            m = re.search(pat, body, re.I)
-            if m:
-                start = max(0, m.start() - 30)
-                return body[start:m.end() + 80].strip()
-        return ""
+    def _new_error(self, baseline: str, candidate: str):
+        return new_regex_evidence(baseline, candidate, self.DB_ERROR_PATTERNS)

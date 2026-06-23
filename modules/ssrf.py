@@ -1,5 +1,5 @@
-import re
 from modules.base import BaseModule
+from modules.evidence import context_excerpt, new_regex_evidence
 
 
 class SsrfModule(BaseModule):
@@ -24,10 +24,12 @@ class SsrfModule(BaseModule):
         "http://0x7f000001/",
     ]
 
-    CLOUD_META_PATTERNS = [
-        r"ami-id", r"instance-id", r"local-ipv4",  # AWS
-        r"computeMetadata",                          # GCP
-        r"USERDATA",                                 # Azure
+    SSRF_EVIDENCE_PATTERNS = [
+        r"(?m)^ami-id\s*$", r"(?m)^instance-id\s*$",
+        r"(?m)^local-ipv4\s*$", r"(?m)^hostname\s*$",
+        r'"instanceId"\s*:', r'"subscriptionId"\s*:',
+        r'"availabilityZone"\s*:', r"Metadata-Flavor\s*:\s*Google",
+        r"(?m)^root:[^\r\n]*:0:0:[^\r\n]*$",
     ]
 
     PARAMS = ["url", "file", "page", "source", "dest", "redirect",
@@ -37,16 +39,23 @@ class SsrfModule(BaseModule):
     def run(self):
         self.log.info("[ssrf] Testing for SSRF vulnerabilities")
         for param in self.PARAMS:
+            baseline = self.get(
+                self.target,
+                params={param: "https://vulxor.invalid/ssrf-baseline"},
+            )
+            if not baseline:
+                continue
             for payload in self.PAYLOADS:
                 resp = self.get(self.target, params={param: payload})
-                if self._is_ssrf(resp):
+                evidence = self._ssrf_evidence(baseline, resp, payload)
+                if evidence:
                     self.add_finding(
                         severity="CRITICAL",
                         title="Server-Side Request Forgery (SSRF)",
                         url=self.target,
                         detail=f"Parameter '{param}' fetched internal resource.",
                         payload=payload,
-                        evidence=resp.text[:400] if resp else "",
+                        evidence=context_excerpt(resp.text, evidence),
                         remediation=(
                             "Allowlist permitted schemes and destinations. "
                             "Block requests to private IP ranges."
@@ -54,8 +63,14 @@ class SsrfModule(BaseModule):
                     )
                     return
 
-    def _is_ssrf(self, resp) -> bool:
+    def _ssrf_evidence(self, baseline, resp, payload: str):
         if not resp or resp.status_code not in (200, 301, 302):
-            return False
-        return any(re.search(p, resp.text, re.I) for p in self.CLOUD_META_PATTERNS) or \
-               "root:" in resp.text
+            return None
+        evidence = new_regex_evidence(
+            baseline.text if baseline else "",
+            resp.text,
+            self.SSRF_EVIDENCE_PATTERNS,
+        )
+        if evidence and evidence.casefold() not in payload.casefold():
+            return evidence
+        return None

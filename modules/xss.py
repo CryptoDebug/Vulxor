@@ -1,28 +1,57 @@
 import html
 import re
+from html.parser import HTMLParser
 from urllib.parse import parse_qs, urlparse
 from modules.base import BaseModule
+
+
+class _XssEvidenceParser(HTMLParser):
+    URL_ATTRIBUTES = {"href", "src", "action", "formaction", "xlink:href"}
+
+    def __init__(self, marker: str, detect_script_body: bool):
+        super().__init__(convert_charrefs=True)
+        self.marker = marker.casefold()
+        self.detect_script_body = detect_script_body
+        self.in_script = False
+        self.executable = False
+
+    def handle_starttag(self, tag, attrs):
+        if tag.casefold() == "script":
+            self.in_script = True
+        for name, value in attrs:
+            name = (name or "").casefold()
+            value = (value or "").casefold()
+            if self.marker not in value:
+                continue
+            if name.startswith("on") or (
+                name in self.URL_ATTRIBUTES and value.lstrip().startswith("javascript:")
+            ):
+                self.executable = True
+
+    def handle_endtag(self, tag):
+        if tag.casefold() == "script":
+            self.in_script = False
+
+    def handle_data(self, data):
+        if self.detect_script_body and self.in_script and self.marker in data.casefold():
+            self.executable = True
 
 
 class XssModule(BaseModule):
     NAME = "xss"
     DESCRIPTION = "XSS testing - reflected, stored indicators, DOM-based patterns"
 
+    MARKER = "vulxor_xss_7f3a"
     PAYLOADS = [
-        "<script>alert('XSS')</script>",
-        "<img src=x onerror=alert('XSS')>",
-        "<svg onload=alert('XSS')>",
-        "\"'><script>alert('XSS')</script>",
-        "javascript:alert('XSS')",
-        "<body onload=alert('XSS')>",
-        "<iframe src=javascript:alert('XSS')>",
-        "<input autofocus onfocus=alert('XSS')>",
-        "';alert('XSS');//",
-        "<details open ontoggle=alert('XSS')>",
-        "<video><source onerror=alert('XSS')>",
-        "<<SCRIPT>alert('XSS')//<</SCRIPT>",
-        "%3Cscript%3Ealert('XSS')%3C/script%3E",
-        "&#60;script&#62;alert(&#39;XSS&#39;)&#60;/script&#62;",
+        "</script><script>window.vulxor_xss_7f3a=1</script>",
+        "\"><img src=x onerror=window.vulxor_xss_7f3a=1>",
+        "\"><svg onload=window.vulxor_xss_7f3a=1>",
+        "javascript:window.vulxor_xss_7f3a=1",
+        "\"><iframe src=javascript:window.vulxor_xss_7f3a=1>",
+        "\"><input autofocus onfocus=window.vulxor_xss_7f3a=1>",
+        "';window.vulxor_xss_7f3a=1;//",
+        "\"><details open ontoggle=window.vulxor_xss_7f3a=1>",
+        "\"><video><source onerror=window.vulxor_xss_7f3a=1>",
     ]
 
     COMMON_PARAMS = ["q", "search", "s", "query", "name", "comment",
@@ -43,26 +72,15 @@ class XssModule(BaseModule):
                     if not resp:
                         continue
                     reflection = self._reflection_state(resp.text, payload)
-                    if reflection == "raw":
+                    if reflection == "executable":
                         self.add_finding(
                             severity="HIGH",
                             title="Reflected XSS",
                             url=url,
-                            detail=f"Payload reflected verbatim in parameter '{param}'.",
+                            detail=f"Parameter '{param}' created an executable HTML/JavaScript context.",
                             payload=payload,
                             evidence=self._extract_context(resp.text, payload),
                             remediation="Escape all user-supplied output; implement a strict CSP.",
-                        )
-                        break
-                    if reflection == "escaped":
-                        self.add_finding(
-                            severity="INFO",
-                            title="Escaped XSS payload reflection",
-                            url=url,
-                            detail=f"Parameter '{param}' reflects encoded user input; manual review may still be useful.",
-                            payload=payload,
-                            evidence=self._extract_context(resp.text, html.escape(payload, quote=False)),
-                            remediation="Keep output encoding context-aware and maintain a restrictive CSP.",
                         )
                         break
 
@@ -73,7 +91,7 @@ class XssModule(BaseModule):
                 target_url = form["action"]
                 r = self.post(target_url, data=data) if form["method"] == "post" \
                     else self.get(target_url, params=data)
-                if r and self._reflection_state(r.text, payload) == "raw":
+                if r and self._reflection_state(r.text, payload) == "executable":
                     self.add_finding(
                         severity="HIGH",
                         title="Reflected XSS via form",
@@ -95,7 +113,7 @@ class XssModule(BaseModule):
                 target_url = self.url(form["action"])
                 r = self.post(target_url, data=data) if form["method"] == "post" \
                     else self.get(target_url, params=data)
-                if r and self._reflection_state(r.text, payload) == "raw":
+                if r and self._reflection_state(r.text, payload) == "executable":
                     self.add_finding(
                         severity="HIGH",
                         title="Reflected XSS via form",
@@ -195,7 +213,15 @@ class XssModule(BaseModule):
 
     def _reflection_state(self, body, payload):
         if payload in body:
-            return "raw"
+            parser = _XssEvidenceParser(
+                marker=self.MARKER,
+                detect_script_body=payload.casefold().startswith("</script>"),
+            )
+            try:
+                parser.feed(body)
+            except (AssertionError, ValueError):
+                return "inert"
+            return "executable" if parser.executable else "inert"
         escaped = html.escape(payload, quote=False)
         if escaped in body or html.escape(payload, quote=True) in body:
             return "escaped"
@@ -204,4 +230,4 @@ class XssModule(BaseModule):
     def _payloads(self, forms=False):
         if self.settings.is_aggressive():
             return self.PAYLOADS if not forms else self.PAYLOADS[:10]
-        return self.PAYLOADS[:4 if forms else 5]
+        return self.PAYLOADS[:4]
