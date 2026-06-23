@@ -1,5 +1,8 @@
 import re
+from urllib.parse import urljoin
+
 from modules.base import BaseModule
+from modules.auth_signals import has_authenticated_marker
 
 
 class AuthModule(BaseModule):
@@ -42,7 +45,8 @@ class AuthModule(BaseModule):
         for form in self.results.meta.get("crawl", {}).get("forms", []):
             if form.get("has_password"):
                 self._login_fields = self._field_names(form.get("inputs", []))
-                return form.get("action")
+                action = form.get("action") or self.target
+                return action if action.startswith("http") else urljoin(self.target + "/", action)
 
         for path in self.LOGIN_PATHS:
             resp = self.get(path)
@@ -54,25 +58,33 @@ class AuthModule(BaseModule):
                 return self.url(path)
         return None
 
-    def _success(self, resp) -> bool:
-        if not resp:
+    def _success(self, resp, baseline=None) -> bool:
+        if not resp or not 200 <= resp.status_code < 400:
             return False
-        low = resp.text.lower()
-        return any(kw in low for kw in
-                   ["dashboard", "logout", "welcome", "profile", "account"])
+        if not has_authenticated_marker(resp.text):
+            return False
+        return not baseline or not has_authenticated_marker(baseline.text)
 
     def _test_default_creds(self, login_url: str):
         resp0 = self.get(login_url)
         if not resp0:
             return
         token = self._extract_csrf(resp0.text)
+        failed_data = self._credential_data("vulxor-invalid-user", "vulxor-invalid-password")
+        if token:
+            failed_data["csrf_token"] = token
+        baseline = self.post(login_url, data=failed_data)
+        self._failed_auth_baseline = baseline
+        if self._success(baseline):
+            self.log.debug("[auth] Session is already authenticated; skipping credential attribution")
+            return
         creds = self.DEFAULT_CREDS if self.settings.is_aggressive() else self.DEFAULT_CREDS[:4]
         for user, pwd in creds:
             data = self._credential_data(user, pwd)
             if token:
                 data["csrf_token"] = token
             r = self.post(login_url, data=data)
-            if self._success(r):
+            if self._success(r, baseline):
                 self.add_finding(
                     severity="CRITICAL",
                     title="Default credentials accepted",
@@ -84,8 +96,9 @@ class AuthModule(BaseModule):
                 return
 
     def _test_header_bypass(self, login_url: str):
+        baseline = self.get(login_url)
         r = self.get(login_url, headers=self.BYPASS_HEADERS)
-        if self._success(r):
+        if self._success(r, baseline):
             self.add_finding(
                 severity="HIGH",
                 title="Authentication bypass via IP-spoofing headers",
@@ -95,6 +108,14 @@ class AuthModule(BaseModule):
             )
 
     def _test_sql_auth_bypass(self, login_url: str):
+        baseline = getattr(self, "_failed_auth_baseline", None)
+        if baseline is None:
+            baseline = self.post(
+                login_url,
+                data=self._credential_data("vulxor-invalid-user", "vulxor-invalid-password"),
+            )
+        if self._success(baseline):
+            return
         sqli_creds = [
             ("' OR '1'='1' --", "x"),
             ("admin'--", "x"),
@@ -102,7 +123,7 @@ class AuthModule(BaseModule):
         ]
         for user, pwd in sqli_creds:
             r = self.post(login_url, data=self._credential_data(user, pwd))
-            if self._success(r):
+            if self._success(r, baseline):
                 self.add_finding(
                     severity="CRITICAL",
                     title="SQL Injection authentication bypass",

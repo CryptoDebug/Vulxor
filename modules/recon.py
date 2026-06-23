@@ -1,6 +1,6 @@
 import re
 import socket
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from modules.base import BaseModule
 
@@ -82,13 +82,16 @@ class ReconModule(BaseModule):
             return
 
         security_headers = {
-            "Strict-Transport-Security": "HSTS missing - susceptible to protocol downgrade",
             "Content-Security-Policy":   "CSP missing - XSS risk increased",
             "X-Frame-Options":           "Clickjacking protection missing",
             "X-Content-Type-Options":    "MIME-sniffing protection missing",
             "Referrer-Policy":           "Referrer policy not set",
             "Permissions-Policy":        "Permissions policy not set",
         }
+        if urlparse(self.target).scheme == "https":
+            security_headers["Strict-Transport-Security"] = (
+                "HSTS missing - susceptible to protocol downgrade"
+            )
         for header, detail in security_headers.items():
             if header not in resp.headers:
                 self.add_finding(

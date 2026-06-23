@@ -1,5 +1,6 @@
 import socket
 import ssl
+import re
 from urllib.parse import urlparse
 from modules.base import BaseModule
 
@@ -49,15 +50,21 @@ class DesyncModule(BaseModule):
             f"G"
         ).encode()
         resp = self._send_raw(host, port, use_tls, raw)
-        if b"Unrecognized method" in resp or b"Invalid method" in resp or \
-           b"400" in resp[:20]:
+        if self._is_desync_indicator(resp):
             self.add_finding(
-                severity="HIGH",
-                title="HTTP Request Smuggling - CL.TE indicator",
+                severity="MEDIUM",
+                title="Potential HTTP request desynchronisation",
                 url=self.target,
-                detail="Back-end returned error suggesting CL.TE desync.",
+                detail="The ambiguous request produced multiple HTTP responses and a back-end method parsing error.",
                 remediation=(
                     "Normalise Transfer-Encoding and Content-Length at the reverse proxy. "
                     "Reject ambiguous requests."
                 ),
             )
+
+    def _is_desync_indicator(self, response: bytes) -> bool:
+        if not response:
+            return False
+        status_lines = re.findall(rb"HTTP/1\.[01]\s+\d{3}\b", response)
+        method_error = b"Unrecognized method" in response or b"Invalid method" in response
+        return len(status_lines) >= 2 and method_error
