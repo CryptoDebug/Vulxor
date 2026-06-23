@@ -140,7 +140,7 @@ class ReconModule(BaseModule):
 
     def _check_robots(self):
         resp = self.get("/robots.txt")
-        if not resp or resp.status_code != 200:
+        if not resp or resp.status_code != 200 or self.is_probable_not_found(resp):
             return
 
         disallowed = re.findall(r"Disallow:\s*(.+)", resp.text)
@@ -159,7 +159,7 @@ class ReconModule(BaseModule):
     def _check_sitemap(self):
         for path in ("/sitemap.xml", "/sitemap_index.xml"):
             resp = self.get(path)
-            if resp and resp.status_code == 200 and "<url" in resp.text:
+            if resp and resp.status_code == 200 and not self.is_probable_not_found(resp) and "<url" in resp.text:
                 urls = re.findall(r"<loc>(.*?)</loc>", resp.text)
                 self.add_finding(
                     severity="INFO",
@@ -173,7 +173,7 @@ class ReconModule(BaseModule):
     def _check_security_txt(self):
         for path in ("/.well-known/security.txt", "/security.txt"):
             resp = self.get(path)
-            if resp and resp.status_code == 200:
+            if resp and resp.status_code == 200 and not self.is_probable_not_found(resp):
                 self.add_finding(
                     severity="INFO",
                     title="security.txt found",
@@ -220,7 +220,7 @@ class ReconModule(BaseModule):
         ]
         for path in sensitive_paths:
             resp = self.get(path)
-            if resp and resp.status_code == 200 and resp.content:
+            if resp and resp.status_code == 200 and resp.content and not self.is_probable_not_found(resp):
                 self.add_finding(
                     severity="HIGH",
                     title=f"Sensitive file exposed: {path}",

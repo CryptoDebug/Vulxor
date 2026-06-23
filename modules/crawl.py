@@ -81,6 +81,9 @@ class CrawlModule(BaseModule):
             resp = self.get(url)
             if not resp:
                 continue
+            if self.is_probable_not_found(resp):
+                self.log.debug(f"[crawl] filtered probable soft 404: {url}")
+                continue
 
             content_type = resp.headers.get("Content-Type", "")
             page = {
@@ -143,6 +146,9 @@ class CrawlModule(BaseModule):
             return None
         resp = self.get(path, allow_redirects=False)
         if not resp or resp.status_code not in self.INTERESTING_STATUSES:
+            return None
+        if self.is_probable_not_found(resp):
+            self.log.debug(f"[crawl] filtered probable soft 404: {self.url(path)}")
             return None
         return {
             "url": self.url(path),

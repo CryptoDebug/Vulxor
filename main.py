@@ -70,6 +70,11 @@ def parse_args():
     )
     parser.add_argument("--tool-timeout", type=int, default=120, help="External tool timeout in seconds")
     parser.add_argument("--delay", type=float, default=0.0, help="Delay between requests (seconds)")
+    parser.add_argument(
+        "--no-soft-404-filter",
+        action="store_true",
+        help="Disable custom 404 / soft-404 response filtering",
+    )
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument("--no-banner", action="store_true", help="Suppress banner")
     parser.add_argument("--report-format", choices=["json", "html", "txt", "all"], default="all")
@@ -114,6 +119,7 @@ def main():
         tools=args.tools,
         tool_timeout=args.tool_timeout,
         delay=args.delay,
+        filter_soft_404=not args.no_soft_404_filter,
         verbose=args.verbose,
         output_dir=args.output,
         report_format=args.report_format,
